@@ -79,6 +79,12 @@ func NewKeyset() *Keyset {
 	}
 }
 
+func NewKeysetWithKey(k *Key) *Keyset {
+	return &Keyset{
+		keys: []*Key{k},
+	}
+}
+
 // Key wraps an encryption key value to be used with `Keyset`s.
 type Key struct {
 	Value       []byte
@@ -126,7 +132,7 @@ func (ks *Keyset) Encrypt(val []byte) ([]byte, error) {
 func (ks *Keyset) Decrypt(val []byte) (res []byte, err error) {
 	ks.RWMutex.RLock()
 	defer ks.RWMutex.RUnlock()
-	
+
 	now := time.Now().Unix()
 	for _, k := range ks.keys {
 		if k.ExpiresUnix > 0 && k.ExpiresUnix < now {
@@ -171,8 +177,12 @@ func RandUInt32() (uint32, error) {
 // previous Keys back, maintaining the order. It also sets the expiration on the
 // more recent previous key.
 func (ks *Keyset) RotateIn(key *Key, expireAfter time.Duration) {
+	keys := []*Key{key}
 	ks.RWMutex.Lock()
-	ks.keys[0].ExpiresUnix = time.Now().Add(expireAfter).Unix()
-	ks.keys = append([]*Key{key}, ks.keys...)
-	ks.RWMutex.Unlock()
+	defer ks.RWMutex.Unlock()
+	if len(ks.keys) > 0 {
+		ks.keys[0].ExpiresUnix = time.Now().Add(expireAfter).Unix()
+		keys = append(keys, ks.keys...)
+	}
+	ks.keys = keys
 }
