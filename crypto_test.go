@@ -38,7 +38,7 @@ func TestCrypto(t *testing.T) {
 func TestCryptoKeyset(t *testing.T) {
 	plaintext := []byte("this is my secret value that I must protect")
 	key, _ := NewRandomKey()
-	ks := &Keyset{Keys: []*Key{key}}
+	ks := &Keyset{keys: []*Key{key}}
 	cipherText, err := ks.Encrypt(plaintext)
 	if err != nil {
 		t.Errorf(
@@ -70,7 +70,7 @@ func TestKeyset_RotateIn(t *testing.T) {
 	timeErrMargin := int64(time.Second * 5)
 
 	type fields struct {
-		Keys   []*Key
+		keys   []*Key
 		TypeID int
 	}
 	type args struct {
@@ -87,7 +87,7 @@ func TestKeyset_RotateIn(t *testing.T) {
 		{
 			name: "basic rotation works",
 			fields: fields{
-				Keys: []*Key{k1},
+				keys: []*Key{k1},
 			},
 			args: args{k2, time.Hour},
 			expirations: []int64{
@@ -99,16 +99,16 @@ func TestKeyset_RotateIn(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ks := &Keyset{
-				Keys:   tt.fields.Keys,
+				keys:   tt.fields.keys,
 				TypeID: tt.fields.TypeID,
 			}
 			ks.RotateIn(tt.args.key, tt.args.expireAfter)
-			preKeys := len(tt.fields.Keys)
-			postKeys := len(ks.Keys)
+			preKeys := len(tt.fields.keys)
+			postKeys := len(ks.keys)
 			if postKeys != preKeys+1 {
 				t.Fatalf("expected %d keys; got %d keys", postKeys, preKeys+1)
 			}
-			for i, k := range ks.Keys {
+			for i, k := range ks.keys {
 				diff := k.ExpiresUnix - tt.expirations[i]
 				if diff < 0 {
 					diff = -1 * diff

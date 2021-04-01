@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -67,8 +68,15 @@ func Decrypt(val []byte, key []byte) ([]byte, error) {
 // clients need to support Keysets of various types on a given API (which get
 // persisted using the same name), they can optionally provide a TypeID.
 type Keyset struct {
-	Keys   []*Key
+	keys   []*Key
 	TypeID int
+	sync.RWMutex
+}
+
+func NewKeyset() *Keyset {
+	return &Keyset{
+		keys: make([]*Key, 0, 1),
+	}
 }
 
 // Key wraps an encryption key value to be used with `Keyset`s.
@@ -100,10 +108,13 @@ func NewKey(key256 []byte) *Key {
 // Encrypt leverages AES-GCM authenticated encryption using the first encryption
 // key in they Keyset.
 func (ks *Keyset) Encrypt(val []byte) ([]byte, error) {
-	if len(ks.Keys) == 0 {
+	ks.RWMutex.RLock()
+	defer ks.RWMutex.RUnlock()
+
+	if len(ks.keys) == 0 {
 		return nil, errors.New("invalid keyset: empty")
 	}
-	k := ks.Keys[0]
+	k := ks.keys[0]
 	if k.ExpiresUnix > 0 && k.ExpiresUnix < time.Now().Unix() {
 		return nil, errors.New("no valid key in keyset")
 	}
@@ -113,8 +124,11 @@ func (ks *Keyset) Encrypt(val []byte) ([]byte, error) {
 // Decrypt attempts to decrypt an AES-GCM encrypted value using each unexpired
 // key in the given keyset until decryption is successful.
 func (ks *Keyset) Decrypt(val []byte) (res []byte, err error) {
+	ks.RWMutex.RLock()
+	defer ks.RWMutex.RUnlock()
+	
 	now := time.Now().Unix()
-	for _, k := range ks.Keys {
+	for _, k := range ks.keys {
 		if k.ExpiresUnix > 0 && k.ExpiresUnix < now {
 			continue
 		}
@@ -157,6 +171,8 @@ func RandUInt32() (uint32, error) {
 // previous Keys back, maintaining the order. It also sets the expiration on the
 // more recent previous key.
 func (ks *Keyset) RotateIn(key *Key, expireAfter time.Duration) {
-	ks.Keys[0].ExpiresUnix = time.Now().Add(expireAfter).Unix()
-	ks.Keys = append([]*Key{key}, ks.Keys...)
+	ks.RWMutex.Lock()
+	ks.keys[0].ExpiresUnix = time.Now().Add(expireAfter).Unix()
+	ks.keys = append([]*Key{key}, ks.keys...)
+	ks.RWMutex.Unlock()
 }
