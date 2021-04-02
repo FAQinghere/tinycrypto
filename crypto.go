@@ -114,8 +114,8 @@ func NewKey(key256 []byte) *Key {
 // Encrypt leverages AES-GCM authenticated encryption using the first encryption
 // key in they Keyset.
 func (ks *Keyset) Encrypt(val []byte) ([]byte, error) {
-	ks.RWMutex.RLock()
-	defer ks.RWMutex.RUnlock()
+	ks.RLock()
+	defer ks.RUnlock()
 
 	if len(ks.keys) == 0 {
 		return nil, errors.New("invalid keyset: empty")
@@ -130,8 +130,8 @@ func (ks *Keyset) Encrypt(val []byte) ([]byte, error) {
 // Decrypt attempts to decrypt an AES-GCM encrypted value using each unexpired
 // key in the given keyset until decryption is successful.
 func (ks *Keyset) Decrypt(val []byte) (res []byte, err error) {
-	ks.RWMutex.RLock()
-	defer ks.RWMutex.RUnlock()
+	ks.RLock()
+	defer ks.RUnlock()
 
 	now := time.Now().Unix()
 	for _, k := range ks.keys {
@@ -178,11 +178,27 @@ func RandUInt32() (uint32, error) {
 // more recent previous key.
 func (ks *Keyset) RotateIn(key *Key, expireAfter time.Duration) {
 	keys := []*Key{key}
-	ks.RWMutex.Lock()
-	defer ks.RWMutex.Unlock()
+	ks.Lock()
+	defer ks.Unlock()
 	if len(ks.keys) > 0 {
 		ks.keys[0].ExpiresUnix = time.Now().Add(expireAfter).Unix()
 		keys = append(keys, ks.keys...)
 	}
 	ks.keys = keys
+}
+
+// Purge removes all any expired keys.
+func (ks *Keyset) Purge() {
+	ks.Lock()
+	defer ks.Unlock()
+	now := time.Now().Unix()
+	end := 0
+	for _, k := range ks.keys {
+		if k.ExpiresUnix > 0 && k.ExpiresUnix < now {
+			continue
+		}
+		ks.keys[end] = k
+		end++
+	}
+	ks.keys = ks.keys[:end]
 }
